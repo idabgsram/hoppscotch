@@ -7,20 +7,57 @@ import {
 import {
   PersistenceService
 } from "@hoppscotch/common/services/persistence"
+import axios from "axios"
 import { listen } from '@tauri-apps/api/event'
 import { Body, getClient } from '@tauri-apps/api/http'
 import { open } from '@tauri-apps/api/shell'
 import { BehaviorSubject, Subject } from "rxjs"
 import { Store } from "tauri-plugin-store-api"
 import { Ref, ref, watch } from "vue"
+import { z } from "zod"
+import * as E from "fp-ts/Either"
+import { subscriptionExchange } from "@urql/core"
+import {
+  getSubscriptionClient,
+  tauriGQLFetchExchange,
+} from "../helpers/GQLClient"
 
 export const authEvents$ = new Subject<AuthEvent | { event: "token_refresh" }>()
 const currentUser$ = new BehaviorSubject<HoppUser | null>(null)
 export const probableUser$ = new BehaviorSubject<HoppUser | null>(null)
 
-const APP_DATA_PATH = "~/.hopp-desktop-app-data.dat"
+export const APP_DATA_PATH = "~/.hopp-desktop-app-data.dat"
 
 const persistenceService = getService(PersistenceService)
+
+const expectedAllowedProvidersSchema = z.object({
+  // currently supported values are "GOOGLE", "GITHUB", "EMAIL", "MICROSOFT", "SAML"
+  // keeping it as string to avoid backend accidentally breaking frontend when adding new providers
+  providers: z.array(z.string()),
+})
+
+
+export const getAllowedAuthProviders = async () => {
+  try {
+    const res = await axios.get(
+      `${import.meta.env.VITE_BACKEND_API_URL}/auth/providers`,
+      {
+        withCredentials: true,
+      }
+    )
+
+    const parseResult = expectedAllowedProvidersSchema.safeParse(res.data)
+
+    if (!parseResult.success) {
+      return E.left("SOMETHING_WENT_WRONG")
+    }
+
+    return E.right(parseResult.data.providers)
+  } catch (_) {
+    return E.left("SOMETHING_WENT_WRONG")
+  }
+}
+
 
 async function logout() {
   let client = await getClient();
@@ -37,7 +74,7 @@ async function signInUserWithGithubFB() {
 }
 
 async function signInUserWithGoogleFB() {
-  await open(`${import.meta.env.VITE_BACKEND_API_URL}/auth/google?redirect_uri=desktop`);
+  await open(`${import.meta.env.VITE_BACKEND_LOGIN_API_URL}/authenticate`);
 }
 
 async function signInUserWithMicrosoftFB() {
@@ -224,6 +261,15 @@ export const def: AuthPlatformDef = {
   },
   getGQLClientOptions() {
     return {
+      exchanges: [
+        subscriptionExchange({
+          forwardSubscription(fetchBody) {
+            const subscriptionClient = getSubscriptionClient()
+            return subscriptionClient!.request(fetchBody)
+          },
+        }),
+        tauriGQLFetchExchange(new Store(APP_DATA_PATH)),
+      ],
       fetchOptions: {
         credentials: "include",
       },
@@ -371,4 +417,5 @@ export const def: AuthPlatformDef = {
       event: "logout",
     })
   },
+  getAllowedAuthProviders,
 }
