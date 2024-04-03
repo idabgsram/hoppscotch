@@ -14,3 +14,12 @@ Since TypeScript cannot handle type information for `.vue` imports, they are shi
 2. Reload the VS Code window by running `Developer: Reload Window` from the command palette.
 
 You can learn more about Take Over mode [here](https://github.com/johnsoncodehk/volar/discussions/471).
+
+## Building
+
+1. Install pnpm
+2. Setup the .env of the root project folder, you should deploy the self hosted backend first
+3. Run `pnpm install` on root project folder
+4. Run `pnpm dev:gql-codegen` on this folder
+5. Run `pnpm tauri dev` to run debug mode (optional)
+6. Run `pnpm tauri build` to build release mode
